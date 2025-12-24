@@ -92,9 +92,11 @@ function App() {
       return
     }
 
-    const headers = ['ID', 'Händler', 'Brutto', 'MwSt-Satz', 'MwSt-Betrag', 'Netto', 'Datum', 'Kategorie', 'Erstellt am']
+    const headers = ['ID', 'Rechnungsnr', 'Auftragsnr', 'Händler', 'Brutto', 'MwSt-Satz', 'MwSt-Betrag', 'Netto', 'Datum', 'Kategorie', 'Erstellt am']
     const rows = receipts.map(r => [
       r.id,
+      r.invoice_number || '-',
+      r.order_number || '-',
       r.merchant,
       r.amount || 'N/A',
       r.mwst_rate || '-',
@@ -106,11 +108,11 @@ function App() {
     ])
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      headers.join(';'),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
     ].join('\n')
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `belege_export_${new Date().toISOString().split('T')[0]}.csv`
@@ -155,7 +157,7 @@ function App() {
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-400 transition-colors">
             <input
               type="file"
-              accept="image/*,.pdf"
+              accept="image/*"
               onChange={handleFileChange}
               className="hidden"
               id="file-upload"
@@ -166,7 +168,7 @@ function App() {
                 <p className="text-gray-600">
                   {file ? file.name : 'Beleg hier ablegen oder klicken'}
                 </p>
-                <p className="text-sm text-gray-500">Unterstützt: JPG, PNG, PDF</p>
+                <p className="text-sm text-gray-500">Unterstützt: JPG, PNG</p>
               </div>
             </label>
           </div>
@@ -204,6 +206,12 @@ function App() {
               </div>
               <div className="space-y-2 text-sm">
                 <p><strong>Händler:</strong> {uploadResult.merchant}</p>
+                {uploadResult.invoiceNumber && (
+                  <p><strong>Rechnungsnummer:</strong> {uploadResult.invoiceNumber}</p>
+                )}
+                {uploadResult.orderNumber && (
+                  <p><strong>Auftragsnummer:</strong> {uploadResult.orderNumber}</p>
+                )}
                 <p><strong>Betrag (Brutto):</strong> {uploadResult.amount || 'N/A'}</p>
                 {uploadResult.mwstRate && (
                   <>
@@ -241,8 +249,14 @@ function App() {
               {receipts.map(receipt => (
                 <div key={receipt.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                   <h3 className="font-semibold text-lg mb-2">{receipt.merchant}</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
-                    <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+                    <div className="space-y-1">
+                      {receipt.invoice_number && (
+                        <p><strong>Rechnungsnr:</strong> {receipt.invoice_number}</p>
+                      )}
+                      {receipt.order_number && (
+                        <p><strong>Auftragsnr:</strong> {receipt.order_number}</p>
+                      )}
                       <p><strong>Brutto:</strong> {receipt.amount}</p>
                       {receipt.mwst_rate && (
                         <>
@@ -251,8 +265,8 @@ function App() {
                         </>
                       )}
                     </div>
-                    <div>
-                      <p><strong>Datum:</strong> {receipt.date}</p>
+                    <div className="space-y-1">
+                      <p><strong>Datum:</strong> {receipt.date || 'unbekannt'}</p>
                       <p><strong>Kategorie:</strong> <span className={`px-2 py-1 rounded text-xs ${
                         receipt.category === 'Geschäftlich' ? 'bg-blue-100 text-blue-800' :
                         receipt.category === 'Absetzbar' ? 'bg-green-100 text-green-800' :
@@ -295,7 +309,7 @@ function App() {
             Backend URL: {backendUrl}
           </p>
           <p className="text-xs text-gray-400 mt-2">
-            Easy Receipt Frontend v3.0.0 | Deployed on Vercel | Backend on Railway
+            Easy Receipt Frontend v3.1.0 | Deployed on Vercel | Backend on Railway
           </p>
         </div>
       </div>
