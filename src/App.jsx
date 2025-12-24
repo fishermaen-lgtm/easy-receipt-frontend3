@@ -1,51 +1,61 @@
 import { useState, useEffect } from 'react'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
-import * as XLSX from 'xlsx'
-import html2canvas from 'html2canvas'
+import { Camera, Upload, CheckCircle, AlertCircle, Download } from 'lucide-react'
+
+const backendUrl = 'https://easy-receipt-backend-production.up.railway.app'
 
 function App() {
-  const [status, setStatus] = useState('Checking backend...')
+  const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
   const [error, setError] = useState(null)
   const [receipts, setReceipts] = useState([])
-  const [showExportMenu, setShowExportMenu] = useState(false)
-  const backendUrl = 'https://easy-receipt-backend-production.up.railway.app'
+  const [backendStatus, setBackendStatus] = useState('checking')
 
-  // Backend Health Check
-  const checkBackend = async () => {
-    try {
-      const response = await fetch(`${backendUrl}/health`)
-      const data = await response.json()
-      setStatus(`Backend Status: ${data.status} ✅`)
-    } catch (error) {
-      setStatus(`Backend Error: ${error.message} ❌`)
-    }
-  }
-
-  // Load receipts
-  const loadReceipts = async () => {
-    try {
-      const response = await fetch(`${backendUrl}/api/receipts`)
-      if (response.ok) {
-        const data = await response.json()
-        setReceipts(data.receipts || [])
-      }
-    } catch (error) {
-      console.error('Error loading receipts:', error)
-    }
-  }
-
-  // Check backend on mount
   useEffect(() => {
-    checkBackend()
-    loadReceipts()
+    checkBackendStatus()
+    fetchReceipts()
   }, [])
 
-  // Handle file upload
-  const handleFileUpload = async (file) => {
-    if (!file) return
+  const checkBackendStatus = async () => {
+    try {
+      const response = await fetch(`${backendUrl}/health`)
+      if (response.ok) {
+        setBackendStatus('ok')
+      } else {
+        setBackendStatus('error')
+      }
+    } catch (err) {
+      setBackendStatus('error')
+      console.error('Backend not reachable:', err)
+    }
+  }
+
+  const fetchReceipts = async () => {
+    try {
+      const response = await fetch(`${backendUrl}/api/receipts`)
+      const data = await response.json()
+      if (data.success) {
+        setReceipts(data.receipts)
+      }
+    } catch (err) {
+      console.error('Error fetching receipts:', err)
+    }
+  }
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0]
+    if (selectedFile) {
+      setFile(selectedFile)
+      setError(null)
+      setUploadResult(null)
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError('Bitte wähle eine Datei aus')
+      return
+    }
 
     setUploading(true)
     setError(null)
@@ -57,401 +67,234 @@ function App() {
     try {
       const response = await fetch(`${backendUrl}/api/receipts/upload`, {
         method: 'POST',
-        body: formData,
+        body: formData
       })
 
-      if (response.ok) {
-        const data = await response.json()
+      const data = await response.json()
+
+      if (response.ok && data.success) {
         setUploadResult(data)
-        loadReceipts()
+        setFile(null)
+        fetchReceipts()
       } else {
-        const errorData = await response.json()
-        setError(`Upload failed: ${errorData.error || response.statusText} (Status: ${response.status})`)
+        setError(data.error || 'Upload fehlgeschlagen')
       }
-    } catch (error) {
-      setError(`Upload error: ${error.message}`)
-      console.error('Detailed error:', error)
+    } catch (err) {
+      setError('Fehler beim Upload: ' + err.message)
     } finally {
       setUploading(false)
     }
   }
 
-  // Handle file input change
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      handleFileUpload(file)
-    }
-  }
-
-  // Handle drag and drop
-  const handleDrop = (e) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files?.[0]
-    if (file) {
-      handleFileUpload(file)
-    }
-  }
-
-  const handleDragOver = (e) => {
-    e.preventDefault()
-  }
-
-  // Get category badge color
-  const getCategoryColor = (category) => {
-    switch (category) {
-      case 'Geschäftlich':
-        return 'bg-blue-100 text-blue-800'
-      case 'Absetzbar':
-        return 'bg-green-100 text-green-800'
-      case 'Privat':
-        return 'bg-gray-100 text-gray-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  // Export as CSV
-  const exportCSV = () => {
+  const exportToCSV = () => {
     if (receipts.length === 0) {
-      alert('Keine Belege zum Exportieren vorhanden!')
+      alert('Keine Belege zum Exportieren vorhanden')
       return
     }
 
-    const headers = ['Händler', 'Betrag', 'Datum', 'Kategorie', 'Erstellt am']
-    const csvRows = [headers.join(';')]
-
-    receipts.forEach(receipt => {
-      const row = [
-        receipt.merchant || 'Unbekannt',
-        receipt.amount || 'N/A',
-        receipt.date || 'Unbekannt',
-        receipt.category || 'Unbekannt',
-        new Date(receipt.created_at).toLocaleDateString('de-DE')
-      ]
-      csvRows.push(row.join(';'))
-    })
-
-    const csvContent = csvRows.join('\n')
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
-    downloadFile(blob, `belege_${getDateString()}.csv`)
-  }
-
-  // Export as Excel
-  const exportExcel = () => {
-    if (receipts.length === 0) {
-      alert('Keine Belege zum Exportieren vorhanden!')
-      return
-    }
-
-    const data = receipts.map(receipt => ({
-      'Händler': receipt.merchant || 'Unbekannt',
-      'Betrag': receipt.amount || 'N/A',
-      'Datum': receipt.date || 'Unbekannt',
-      'Kategorie': receipt.category || 'Unbekannt',
-      'Erstellt am': new Date(receipt.created_at).toLocaleDateString('de-DE')
-    }))
-
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Belege')
-    
-    // Auto-size columns
-    const maxWidth = data.reduce((w, r) => Math.max(w, r['Händler'].length), 10)
-    ws['!cols'] = [
-      { wch: maxWidth },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 15 }
-    ]
-
-    XLSX.writeFile(wb, `belege_${getDateString()}.xlsx`)
-  }
-
-  // Export as PDF
-  const exportPDF = () => {
-    if (receipts.length === 0) {
-      alert('Keine Belege zum Exportieren vorhanden!')
-      return
-    }
-
-    const doc = new jsPDF()
-    
-    // Title
-    doc.setFontSize(20)
-    doc.text('Easy Receipt - Belege Übersicht', 14, 22)
-    
-    // Date
-    doc.setFontSize(10)
-    doc.text(`Exportiert am: ${new Date().toLocaleDateString('de-DE')}`, 14, 30)
-    
-    // Table
-    const tableData = receipts.map(receipt => [
-      receipt.merchant || 'Unbekannt',
-      receipt.amount || 'N/A',
-      receipt.date || 'Unbekannt',
-      receipt.category || 'Unbekannt'
+    const headers = ['ID', 'Händler', 'Brutto', 'MwSt-Satz', 'MwSt-Betrag', 'Netto', 'Datum', 'Kategorie', 'Erstellt am']
+    const rows = receipts.map(r => [
+      r.id,
+      r.merchant,
+      r.amount || 'N/A',
+      r.mwst_rate || '-',
+      r.mwst_amount || '-',
+      r.netto_amount || '-',
+      r.date || 'unbekannt',
+      r.category,
+      new Date(r.created_at).toLocaleDateString('de-DE')
     ])
-    
-    doc.autoTable({
-      head: [['Händler', 'Betrag', 'Datum', 'Kategorie']],
-      body: tableData,
-      startY: 35,
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [59, 130, 246] }
-    })
-    
-    doc.save(`belege_${getDateString()}.pdf`)
-  }
 
-  // Export as Image (JPG/PNG)
-  const exportImage = async (format = 'png') => {
-    const element = document.getElementById('receipts-list')
-    if (!element) {
-      alert('Belege-Liste nicht gefunden!')
-      return
-    }
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n')
 
-    try {
-      const canvas = await html2canvas(element, {
-        backgroundColor: '#ffffff',
-        scale: 2
-      })
-      
-      canvas.toBlob((blob) => {
-        const extension = format === 'jpeg' ? 'jpg' : format
-        downloadFile(blob, `belege_${getDateString()}.${extension}`)
-      }, `image/${format}`, 0.95)
-    } catch (error) {
-      alert('Fehler beim Erstellen des Bildes: ' + error.message)
-    }
-  }
-
-  // Helper: Download file
-  const downloadFile = (blob, filename) => {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', filename)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
+    link.href = URL.createObjectURL(blob)
+    link.download = `belege_export_${new Date().toISOString().split('T')[0]}.csv`
     link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
-  // Helper: Get date string
-  const getDateString = () => {
-    return new Date().toISOString().split('T')[0]
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 mb-6">
-          <h1 className="text-5xl font-bold text-gray-800 mb-4">
-            📸 Easy Receipt
-          </h1>
-          <p className="text-xl text-gray-600 mb-4">
-            Beleg hochladen, OCR macht den Rest!
-          </p>
-          <div className="flex gap-4 flex-wrap">
-            <span className="px-4 py-2 bg-green-100 text-green-800 rounded-lg font-semibold">
-              ✅ React läuft
-            </span>
-            <span className="px-4 py-2 bg-green-100 text-green-800 rounded-lg font-semibold">
-              ✅ Vite läuft
-            </span>
-            <span className="px-4 py-2 bg-green-100 text-green-800 rounded-lg font-semibold">
-              ✅ Tailwind läuft
-            </span>
-            <span className="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg font-semibold">
-              🚀 Upload Ready
-            </span>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-4xl mx-auto">
+        <header className="text-center mb-8 pt-8">
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <Camera className="w-10 h-10 text-indigo-600" />
+            <h1 className="text-4xl font-bold text-gray-800">Easy Receipt</h1>
           </div>
-        </div>
+          <p className="text-gray-600">Beleg hochladen, OCR macht den Rest!</p>
+          <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+            <div className="flex items-center gap-1">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span>React läuft</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span>Vite läuft</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span>Tailwind läuft</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Upload className="w-4 h-4 text-blue-500" />
+              <span>Upload Ready</span>
+            </div>
+          </div>
+        </header>
 
-        {/* Upload Area */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 mb-6">
-          <h2 className="text-3xl font-bold text-gray-800 mb-4">
-            📤 Beleg hochladen
-          </h2>
-          
-          {/* Drag & Drop Zone */}
-          <div
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition cursor-pointer"
-          >
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Upload className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-2xl font-semibold">Beleg hochladen</h2>
+          </div>
+
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-400 transition-colors">
             <input
               type="file"
               accept="image/*,.pdf"
               onChange={handleFileChange}
               className="hidden"
-              id="file-input"
-              disabled={uploading}
+              id="file-upload"
             />
-            <label htmlFor="file-input" className="cursor-pointer">
-              <div className="text-6xl mb-4">📄</div>
-              <p className="text-xl text-gray-700 mb-2">
-                Beleg hier ablegen oder klicken
-              </p>
-              <p className="text-sm text-gray-500">
-                Unterstützt: JPG, PNG, PDF
-              </p>
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <div className="flex flex-col items-center gap-3">
+                <Camera className="w-12 h-12 text-gray-400" />
+                <p className="text-gray-600">
+                  {file ? file.name : 'Beleg hier ablegen oder klicken'}
+                </p>
+                <p className="text-sm text-gray-500">Unterstützt: JPG, PNG, PDF</p>
+              </div>
             </label>
           </div>
 
-          {/* Upload Status */}
+          {file && !uploading && !uploadResult && (
+            <button
+              onClick={handleUpload}
+              className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+            >
+              Jetzt hochladen und verarbeiten
+            </button>
+          )}
+
           {uploading && (
-            <div className="mt-4 p-4 bg-blue-100 text-blue-800 rounded-lg">
-              ⏳ Beleg wird verarbeitet...
+            <div className="mt-4 text-center">
+              <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full mx-auto"></div>
+              <p className="mt-2 text-gray-600">Verarbeite Beleg...</p>
             </div>
           )}
 
-          {/* Error Message */}
           {error && (
-            <div className="mt-4 p-4 bg-red-100 text-red-800 rounded-lg">
-              ❌ {error}
+            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <strong>Upload failed:</strong> {error}
+              </div>
             </div>
           )}
 
-          {/* Upload Result */}
           {uploadResult && (
-            <div className="mt-4 p-6 bg-green-50 rounded-lg border-2 border-green-200">
-              <h3 className="text-xl font-bold text-green-800 mb-4">
-                ✅ Beleg erfolgreich verarbeitet!
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600">Händler</p>
-                  <p className="text-lg font-semibold">{uploadResult.merchant || 'Unbekannt'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Betrag</p>
-                  <p className="text-lg font-semibold">{uploadResult.amount || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Datum</p>
-                  <p className="text-lg font-semibold">{uploadResult.date || 'Unbekannt'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Kategorie</p>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getCategoryColor(uploadResult.category)}`}>
-                    {uploadResult.category || 'Unbekannt'}
-                  </span>
-                </div>
+            <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+                <h3 className="font-semibold text-green-800">Beleg erfolgreich verarbeitet!</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                <p><strong>Händler:</strong> {uploadResult.merchant}</p>
+                <p><strong>Betrag (Brutto):</strong> {uploadResult.amount || 'N/A'}</p>
+                {uploadResult.mwstRate && (
+                  <>
+                    <p><strong>MwSt ({uploadResult.mwstRate}):</strong> {uploadResult.mwstAmount || 'N/A'}</p>
+                    <p><strong>Netto:</strong> {uploadResult.nettoAmount || 'N/A'}</p>
+                  </>
+                )}
+                <p><strong>Datum:</strong> {uploadResult.date || 'Unbekannt'}</p>
+                <p><strong>Kategorie:</strong> {uploadResult.category}</p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Receipts List */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-3xl font-bold text-gray-800">
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-semibold flex items-center gap-2">
               📋 Letzte Belege
             </h2>
             {receipts.length > 0 && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowExportMenu(!showExportMenu)}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center gap-2"
-                >
-                  📥 Export
-                  <span className="text-xs">▼</span>
-                </button>
-                
-                {showExportMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-10">
-                    <button
-                      onClick={() => { exportPDF(); setShowExportMenu(false) }}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-100 rounded-t-lg flex items-center gap-2"
-                    >
-                      📄 PDF
-                    </button>
-                    <button
-                      onClick={() => { exportExcel(); setShowExportMenu(false) }}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      📗 Excel (XLSX)
-                    </button>
-                    <button
-                      onClick={() => { exportCSV(); setShowExportMenu(false) }}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      📊 CSV
-                    </button>
-                    <button
-                      onClick={() => { exportImage('png'); setShowExportMenu(false) }}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      🖼️ PNG
-                    </button>
-                    <button
-                      onClick={() => { exportImage('jpeg'); setShowExportMenu(false) }}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-100 rounded-b-lg flex items-center gap-2"
-                    >
-                      🖼️ JPG
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={exportToCSV}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </button>
             )}
           </div>
-          
-          <div id="receipts-list">
-            {receipts.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                Noch keine Belege hochgeladen
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {receipts.slice(0, 10).map((receipt) => (
-                  <div key={receipt.id} className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg">{receipt.merchant || 'Unbekannt'}</h3>
-                        <p className="text-sm text-gray-600">
-                          {receipt.date || 'Datum unbekannt'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xl font-bold text-gray-800">{receipt.amount || 'N/A'}</p>
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getCategoryColor(receipt.category)}`}>
-                          {receipt.category || 'Unbekannt'}
-                        </span>
-                      </div>
+
+          {receipts.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">Noch keine Belege hochgeladen</p>
+          ) : (
+            <div className="space-y-4">
+              {receipts.map(receipt => (
+                <div key={receipt.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h3 className="font-semibold text-lg mb-2">{receipt.merchant}</h3>
+                  <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                    <div>
+                      <p><strong>Brutto:</strong> {receipt.amount}</p>
+                      {receipt.mwst_rate && (
+                        <>
+                          <p><strong>MwSt ({receipt.mwst_rate}):</strong> {receipt.mwst_amount}</p>
+                          <p><strong>Netto:</strong> {receipt.netto_amount}</p>
+                        </>
+                      )}
+                    </div>
+                    <div>
+                      <p><strong>Datum:</strong> {receipt.date}</p>
+                      <p><strong>Kategorie:</strong> <span className={`px-2 py-1 rounded text-xs ${
+                        receipt.category === 'Geschäftlich' ? 'bg-blue-100 text-blue-800' :
+                        receipt.category === 'Absetzbar' ? 'bg-green-100 text-green-800' :
+                        receipt.category === 'Lebensmittel' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>{receipt.category}</span></p>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Backend Status */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-3xl font-bold text-gray-800 mb-4">
-            Backend Connection
-          </h2>
-          <p className="text-lg text-gray-700 mb-4">{status}</p>
-          <button 
-            onClick={checkBackend}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">Backend Connection</h2>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">Backend Status:</span>
+            {backendStatus === 'ok' ? (
+              <>
+                <span className="text-green-600 font-semibold">OK</span>
+                <CheckCircle className="w-5 h-5 text-green-600" />
+              </>
+            ) : backendStatus === 'error' ? (
+              <>
+                <span className="text-red-600 font-semibold">Error</span>
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </>
+            ) : (
+              <span className="text-gray-600">Checking...</span>
+            )}
+          </div>
+          <button
+            onClick={checkBackendStatus}
+            className="mt-3 text-sm bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
           >
             🔄 Backend erneut prüfen
           </button>
-          <p className="text-sm text-gray-500 mt-4">
+          <p className="text-xs text-gray-500 mt-4">
             Backend URL: {backendUrl}
           </p>
-        </div>
-
-        {/* Info */}
-        <div className="mt-6 text-center text-white">
-          <p className="text-sm opacity-80">
+          <p className="text-xs text-gray-400 mt-2">
             Easy Receipt Frontend v3.0.0 | Deployed on Vercel | Backend on Railway
           </p>
         </div>
