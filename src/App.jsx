@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Camera, Upload, CheckCircle, AlertCircle, Download } from 'lucide-react'
 
-const backendUrl = 'https://easy-receipt-backend-production.up.railway.app'
+const backendUrl = 'https://shimmering-kindness-production.up.railway.app'
 
 function App() {
   const [file, setFile] = useState(null)
