@@ -91,18 +91,44 @@ function App() {
       return
     }
 
-    const headers = ['ID', 'Händler', 'Betrag', 'Datum', 'Kategorie', 'Rechnung-Nr', 'MwSt', 'Absetzbar', 'Erstellt']
-    const rows = receipts.map(r => [
-      r.id,
-      r.merchant || 'Unbekannt',
-      r.amount || '0',
-      r.date || '-',
-      r.category || '-',
-      r.invoice_number || '-',
-      r.vat_amount || '-',
-      r.is_deductible ? 'Ja' : 'Nein',
-      new Date(r.created_at).toLocaleDateString('de-DE')
-    ])
+    const headers = [
+      'ID', 
+      'Händler', 
+      'Brutto-Betrag', 
+      'Netto-Betrag',
+      'MwSt 19%',
+      'MwSt 7%',
+      'Datum', 
+      'Kategorie', 
+      'Rechnung-Nr', 
+      'Absetzbar', 
+      'Erstellt'
+    ]
+    
+    const rows = receipts.map(r => {
+      const bruttoAmount = r.amount || 0
+      const vatAmount = r.vat_amount || 0
+      const vatRate = r.vat_rate || 0
+      const nettoAmount = bruttoAmount - vatAmount
+      
+      // Separate VAT by rate
+      const vat19 = vatRate === 19 ? vatAmount : 0
+      const vat7 = vatRate === 7 ? vatAmount : 0
+      
+      return [
+        r.id,
+        r.merchant || 'Unbekannt',
+        bruttoAmount.toFixed(2),
+        nettoAmount.toFixed(2),
+        vat19.toFixed(2),
+        vat7.toFixed(2),
+        r.date || '-',
+        r.category || '-',
+        r.invoice_number || '-',
+        r.is_deductible ? 'Ja' : 'Nein',
+        new Date(r.created_at).toLocaleDateString('de-DE')
+      ]
+    })
 
     const csvContent = [
       headers.join(';'),
@@ -231,7 +257,7 @@ function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div className="space-y-2">
                   <p><strong>Händler:</strong> {uploadResult.merchant}</p>
-                  <p><strong>Betrag:</strong> {uploadResult.amount ? `${uploadResult.amount} €` : 'N/A'}</p>
+                  <p><strong>Betrag (Brutto):</strong> {uploadResult.amount ? `${uploadResult.amount} €` : 'N/A'}</p>
                   <p><strong>Datum:</strong> {uploadResult.date || 'Unbekannt'}</p>
                 </div>
                 <div className="space-y-2">
@@ -241,8 +267,11 @@ function App() {
                   {uploadResult.invoice_number && (
                     <p><strong>Rechnung-Nr:</strong> {uploadResult.invoice_number}</p>
                   )}
-                  {uploadResult.vat_amount && (
-                    <p><strong>MwSt:</strong> {uploadResult.vat_amount} €</p>
+                  {uploadResult.vatAmount && (
+                    <p><strong>MwSt {uploadResult.vatRate ? `(${uploadResult.vatRate}%)` : ''}:</strong> {uploadResult.vatAmount} €</p>
+                  )}
+                  {uploadResult.vatAmount && (
+                    <p><strong>Netto:</strong> {(uploadResult.amount - uploadResult.vatAmount).toFixed(2)} €</p>
                   )}
                 </div>
               </div>
@@ -282,9 +311,21 @@ function App() {
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-gray-700">
                     <div>
-                      <p className="text-xs text-gray-500">Betrag</p>
+                      <p className="text-xs text-gray-500">Brutto-Betrag</p>
                       <p className="font-semibold">{receipt.amount ? `${receipt.amount} €` : 'N/A'}</p>
                     </div>
+                    {receipt.vat_amount && (
+                      <div>
+                        <p className="text-xs text-gray-500">MwSt {receipt.vat_rate ? `(${receipt.vat_rate}%)` : ''}</p>
+                        <p className="font-semibold">{receipt.vat_amount} €</p>
+                      </div>
+                    )}
+                    {receipt.vat_amount && (
+                      <div>
+                        <p className="text-xs text-gray-500">Netto</p>
+                        <p className="font-semibold">{(receipt.amount - receipt.vat_amount).toFixed(2)} €</p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-xs text-gray-500">Datum</p>
                       <p className="font-semibold">{receipt.date || 'unbekannt'}</p>
