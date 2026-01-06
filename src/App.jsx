@@ -98,6 +98,7 @@ function App() {
       'Netto-Betrag',
       'MwSt 19%',
       'MwSt 7%',
+      'MwSt-Satz',
       'Datum', 
       'Kategorie', 
       'Rechnung-Nr', 
@@ -106,9 +107,10 @@ function App() {
     ]
     
     const rows = receipts.map(r => {
-      const bruttoAmount = r.amount || 0
-      const vatAmount = r.vat_amount || 0
-      const vatRate = r.vat_rate || 0
+      const bruttoAmount = parseFloat(r.amount) || 0
+      // Try both camelCase (from fresh API response) and snake_case (from DB)
+      const vatAmount = parseFloat(r.vat_amount || r.vatAmount) || 0
+      const vatRate = r.vat_rate || r.vatRate || 0
       const nettoAmount = bruttoAmount - vatAmount
       
       // Separate VAT by rate
@@ -122,6 +124,7 @@ function App() {
         nettoAmount.toFixed(2),
         vat19.toFixed(2),
         vat7.toFixed(2),
+        vatRate ? `${vatRate}%` : '-',
         r.date || '-',
         r.category || '-',
         r.invoice_number || '-',
@@ -257,21 +260,21 @@ function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div className="space-y-2">
                   <p><strong>Händler:</strong> {uploadResult.merchant}</p>
-                  <p><strong>Betrag (Brutto):</strong> {uploadResult.amount ? `${uploadResult.amount} €` : 'N/A'}</p>
+                  <p><strong>Betrag (Brutto):</strong> {uploadResult.amount ? `${parseFloat(uploadResult.amount).toFixed(2)} €` : 'N/A'}</p>
                   <p><strong>Datum:</strong> {uploadResult.date || 'Unbekannt'}</p>
                 </div>
                 <div className="space-y-2">
                   <p><strong>Kategorie:</strong> <span className={`px-2 py-1 rounded text-xs ${
                     uploadResult.category === 'Geschäftlich' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                   }`}>{uploadResult.category}</span></p>
-                  {uploadResult.invoice_number && (
-                    <p><strong>Rechnung-Nr:</strong> {uploadResult.invoice_number}</p>
+                  {uploadResult.invoiceNumber && (
+                    <p><strong>Rechnung-Nr:</strong> {uploadResult.invoiceNumber}</p>
                   )}
-                  {uploadResult.vatAmount && (
-                    <p><strong>MwSt {uploadResult.vatRate ? `(${uploadResult.vatRate}%)` : ''}:</strong> {uploadResult.vatAmount} €</p>
+                  {(uploadResult.vatAmount || uploadResult.vat_amount) && (
+                    <p><strong>MwSt {(uploadResult.vatRate || uploadResult.vat_rate) ? `(${uploadResult.vatRate || uploadResult.vat_rate}%)` : ''}:</strong> {parseFloat(uploadResult.vatAmount || uploadResult.vat_amount).toFixed(2)} €</p>
                   )}
-                  {uploadResult.vatAmount && (
-                    <p><strong>Netto:</strong> {(uploadResult.amount - uploadResult.vatAmount).toFixed(2)} €</p>
+                  {(uploadResult.vatAmount || uploadResult.vat_amount) && (
+                    <p><strong>Netto:</strong> {(parseFloat(uploadResult.amount) - parseFloat(uploadResult.vatAmount || uploadResult.vat_amount)).toFixed(2)} €</p>
                   )}
                 </div>
               </div>
@@ -312,18 +315,18 @@ function App() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-gray-700">
                     <div>
                       <p className="text-xs text-gray-500">Brutto-Betrag</p>
-                      <p className="font-semibold">{receipt.amount ? `${receipt.amount} €` : 'N/A'}</p>
+                      <p className="font-semibold">{receipt.amount ? `${parseFloat(receipt.amount).toFixed(2)} €` : 'N/A'}</p>
                     </div>
-                    {receipt.vat_amount && (
+                    {(receipt.vat_amount || receipt.vatAmount) && (
                       <div>
-                        <p className="text-xs text-gray-500">MwSt {receipt.vat_rate ? `(${receipt.vat_rate}%)` : ''}</p>
-                        <p className="font-semibold">{receipt.vat_amount} €</p>
+                        <p className="text-xs text-gray-500">MwSt {(receipt.vat_rate || receipt.vatRate) ? `(${receipt.vat_rate || receipt.vatRate}%)` : ''}</p>
+                        <p className="font-semibold">{parseFloat(receipt.vat_amount || receipt.vatAmount).toFixed(2)} €</p>
                       </div>
                     )}
-                    {receipt.vat_amount && (
+                    {(receipt.vat_amount || receipt.vatAmount) && (
                       <div>
                         <p className="text-xs text-gray-500">Netto</p>
-                        <p className="font-semibold">{(receipt.amount - receipt.vat_amount).toFixed(2)} €</p>
+                        <p className="font-semibold">{(parseFloat(receipt.amount) - parseFloat(receipt.vat_amount || receipt.vatAmount)).toFixed(2)} €</p>
                       </div>
                     )}
                     <div>
