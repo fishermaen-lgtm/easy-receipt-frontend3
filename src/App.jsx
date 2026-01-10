@@ -446,7 +446,7 @@ function App() {
                     )}
                     <div>
                       <p className="text-xs text-gray-500">Datum</p>
-                      <p className="font-semibold">{receipt.date || '-'}</p>
+                      <p className="font-semibold">{receipt.date ? receipt.date.split('T')[0] : '-'}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Typ</p>
@@ -568,7 +568,7 @@ function ReviewModal({ receipt, onSave, onClose }) {
               </label>
               <input
                 type="date"
-                value={formData.date}
+                value={formData.date ? formData.date.split('T')[0] : ''}
                 onChange={(e) => handleChange('date', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 required
