@@ -82,20 +82,20 @@ function App() {
     formData.append('receipt', file)
 
     try {
-      const response = await fetch(`${backendUrl}/api/receipts/upload`, {
+      const response = await fetch(`${backendUrl}/api/receipts`, {
         method: 'POST',
         body: formData
       })
 
       const data = await response.json()
 
-      if (response.ok && data.success) {
-        setUploadResult(data.receipt)
+      if (response.ok) {
+        setUploadResult(data)
         setFile(null)
         
         // If needs review, open edit modal
-        if (data.needsReview) {
-          setEditingReceipt(data.receipt)
+        if (data.needs_review) {
+          setEditingReceipt(data)
         }
         
         fetchReceipts()
@@ -113,14 +113,17 @@ function App() {
   const handleSaveReceipt = async (receiptData) => {
     try {
       const response = await fetch(`${backendUrl}/api/receipts/${receiptData.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(receiptData)
+        body: JSON.stringify({
+          ...receiptData,
+          status: 'APPROVED'
+        })
       })
 
       const data = await response.json()
 
-      if (response.ok && data.success) {
+      if (response.ok) {
         setEditingReceipt(null)
         fetchReceipts()
         fetchStats()
@@ -224,7 +227,7 @@ function App() {
         <header className="text-center mb-8 pt-8">
           <div className="flex items-center justify-center gap-3 mb-2">
             <Camera className="w-10 h-10 text-indigo-600" />
-            <h1 className="text-4xl font-bold text-gray-800">RechnungsHeld v3.0</h1>
+            <h1 className="text-4xl font-bold text-gray-800">RechnungsHeld v3.2</h1>
           </div>
           <p className="text-gray-600 font-medium">EASY RECEIPT by save-house.de</p>
           <p className="text-sm text-gray-500 mt-1">Professionelle Belegerfassung mit Review-System</p>
@@ -233,15 +236,15 @@ function App() {
           {stats && (
             <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
               <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-indigo-600">{stats.total || 0}</p>
+                <p className="text-2xl font-bold text-indigo-600">{stats.total_receipts || 0}</p>
                 <p className="text-sm text-gray-600">Gesamt</p>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-orange-600">{stats.pending_count || 0}</p>
+                <p className="text-2xl font-bold text-orange-600">{stats.pending || 0}</p>
                 <p className="text-sm text-gray-600">Zu prüfen</p>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-green-600">{stats.approved_count || 0}</p>
+                <p className="text-2xl font-bold text-green-600">{stats.approved || 0}</p>
                 <p className="text-sm text-gray-600">Genehmigt</p>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
@@ -447,7 +450,7 @@ function App() {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Typ</p>
-                      <p className="font-semibold">{receipt.file_type === 'PDF' ? '📄 PDF' : '📸 Foto'}</p>
+                      <p className="font-semibold">{receipt.file_type === 'application/pdf' ? '📄 PDF' : '📸 Foto'}</p>
                     </div>
                   </div>
                 </div>
