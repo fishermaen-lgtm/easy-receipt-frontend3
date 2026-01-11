@@ -1,666 +1,684 @@
-import { useState, useEffect } from 'react'
-import { Camera, Upload, CheckCircle, AlertCircle, Download, FileText, Edit2, Save, X, Eye } from 'lucide-react'
+import React, { useState, useEffect } from 'react';
+import { 
+  Upload, X, CheckCircle, AlertCircle, Download, 
+  FileText, Edit2, Trash2, Eye, Calendar, DollarSign,
+  Table, FileSpreadsheet, FileDown
+} from 'lucide-react';
 
-const backendUrl = 'https://easy-receipt-backend-production.up.railway.app'
+const API_URL = 'https://easy-receipt-backend-production.up.railway.app';
 
 function App() {
-  const [file, setFile] = useState(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadResult, setUploadResult] = useState(null)
-  const [error, setError] = useState(null)
-  const [receipts, setReceipts] = useState([])
-  const [backendStatus, setBackendStatus] = useState('checking')
-  const [stats, setStats] = useState(null)
-  const [filterStatus, setFilterStatus] = useState('all')
-  const [editingReceipt, setEditingReceipt] = useState(null)
+  const [receipts, setReceipts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [backendStatus, setBackendStatus] = useState(null);
+  const [filter, setFilter] = useState('ALL');
+  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, total_amount: 0 });
 
+  // Load receipts on mount
   useEffect(() => {
-    checkBackendStatus()
-    fetchReceipts()
-    fetchStats()
-  }, [])
+    fetchReceipts();
+    checkBackendStatus();
+  }, []);
 
   const checkBackendStatus = async () => {
     try {
-      const response = await fetch(`${backendUrl}/api/health`)
-      if (response.ok) {
-        setBackendStatus('ok')
-      } else {
-        setBackendStatus('error')
-      }
-    } catch (err) {
-      setBackendStatus('error')
-      console.error('Backend not reachable:', err)
+      const response = await fetch(`${API_URL}/api/health`);
+      const data = await response.json();
+      setBackendStatus(data);
+    } catch (error) {
+      setBackendStatus({ status: 'error' });
     }
-  }
+  };
 
   const fetchReceipts = async () => {
     try {
-      const url = filterStatus === 'all' 
-        ? `${backendUrl}/api/receipts`
-        : `${backendUrl}/api/receipts?status=${filterStatus.toUpperCase()}`
+      const response = await fetch(`${API_URL}/api/receipts`);
+      const data = await response.json();
+      setReceipts(data);
       
-      const response = await fetch(url)
-      const data = await response.json()
-      setReceipts(Array.isArray(data) ? data : [])
-    } catch (err) {
-      console.error('Error fetching receipts:', err)
-      setReceipts([])
+      const statsResponse = await fetch(`${API_URL}/api/receipts/stats`);
+      const statsData = await statsResponse.json();
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error fetching receipts:', error);
     }
-  }
+  };
 
-  const fetchStats = async () => {
-    try {
-      const response = await fetch(`${backendUrl}/api/receipts/stats`)
-      const data = await response.json()
-      setStats(data)
-    } catch (err) {
-      console.error('Error fetching stats:', err)
-    }
-  }
+  const handleFileUpload = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0]
-    if (selectedFile) {
-      setFile(selectedFile)
-      setError(null)
-      setUploadResult(null)
-    }
-  }
-
-  const handleUpload = async () => {
-    if (!file) {
-      setError('Bitte wähle eine Datei aus')
-      return
-    }
-
-    setUploading(true)
-    setError(null)
-    setUploadResult(null)
-
-    const formData = new FormData()
-    formData.append('receipt', file)
+    setIsLoading(true);
 
     try {
-      const response = await fetch(`${backendUrl}/api/receipts`, {
+      const response = await fetch(`${API_URL}/api/receipts/upload`, {
         method: 'POST',
-        body: formData
-      })
+        body: formData,
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
-      if (response.ok) {
-        setUploadResult(data)
-        setFile(null)
+      if (data.success) {
+        await fetchReceipts();
+        setShowUploadModal(false);
         
-        // If needs review, open edit modal
-        if (data.needs_review) {
-          setEditingReceipt(data)
-        }
-        
-        fetchReceipts()
-        fetchStats()
+        const newReceipt = receipts.find(r => r.id === data.receiptId) || data;
+        setSelectedReceipt(newReceipt);
+        setShowReviewModal(true);
       } else {
-        setError(data.error || data.details || 'Upload fehlgeschlagen')
+        alert(`Upload fehlgeschlagen: ${data.error}`);
       }
-    } catch (err) {
-      setError('Fehler beim Upload: ' + err.message)
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Upload fehlgeschlagen');
     } finally {
-      setUploading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  const handleSaveReceipt = async (receiptData) => {
+  const handleApprove = async (receipt) => {
     try {
-      const response = await fetch(`${backendUrl}/api/receipts/${receiptData.id}`, {
-        method: 'PATCH',
+      await fetch(`${API_URL}/api/receipts/${receipt.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...receiptData,
-          status: 'APPROVED'
-        })
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setEditingReceipt(null)
-        fetchReceipts()
-        fetchStats()
-        alert('✅ Beleg gespeichert!')
-      } else {
-        alert('❌ Fehler beim Speichern: ' + data.error)
-      }
-    } catch (err) {
-      alert('❌ Fehler: ' + err.message)
+        body: JSON.stringify({ ...receipt, status: 'APPROVED' })
+      });
+      
+      await fetchReceipts();
+      setShowReviewModal(false);
+      setShowEditModal(false);
+    } catch (error) {
+      console.error('Approve error:', error);
+      alert('Genehmigung fehlgeschlagen');
     }
-  }
+  };
 
-  const handleDownload = async (receiptId, filename) => {
+  const handleEdit = async (updatedReceipt) => {
     try {
-      const response = await fetch(`${backendUrl}/api/receipts/${receiptId}/download`)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.click()
-      window.URL.revokeObjectURL(url)
-    } catch (err) {
-      alert('❌ Download fehlgeschlagen: ' + err.message)
-    }
-  }
-
-  const exportToCSV = () => {
-    if (receipts.length === 0) {
-      alert('Keine Belege zum Exportieren vorhanden')
-      return
-    }
-
-    const approvedReceipts = receipts.filter(r => r.status === 'APPROVED')
-    
-    if (approvedReceipts.length === 0) {
-      alert('Keine genehmigten Belege zum Exportieren')
-      return
-    }
-
-    const headers = [
-      'ID', 
-      'Händler', 
-      'Brutto-Betrag', 
-      'Netto-Betrag',
-      'MwSt 19%',
-      'MwSt 7%',
-      'MwSt-Satz',
-      'Datum', 
-      'Kategorie', 
-      'Rechnung-Nr', 
-      'Absetzbar',
-      'Status',
-      'Erstellt'
-    ]
-    
-    const rows = approvedReceipts.map(r => {
-      const bruttoAmount = parseFloat(r.amount) || 0
-      const vatAmount = parseFloat(r.vat_amount) || 0
-      const vatRate = r.vat_rate || 0
-      const nettoAmount = bruttoAmount - vatAmount
+      await fetch(`${API_URL}/api/receipts/${updatedReceipt.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedReceipt)
+      });
       
-      const vat19 = vatRate === 19 ? vatAmount : 0
-      const vat7 = vatRate === 7 ? vatAmount : 0
+      await fetchReceipts();
+      setShowEditModal(false);
+    } catch (error) {
+      console.error('Edit error:', error);
+      alert('Bearbeitung fehlgeschlagen');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Beleg wirklich löschen?')) return;
+
+    try {
+      await fetch(`${API_URL}/api/receipts/${id}`, { method: 'DELETE' });
+      await fetchReceipts();
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Löschen fehlgeschlagen');
+    }
+  };
+
+  const handleDownload = async (id, filename) => {
+    try {
+      const response = await fetch(`${API_URL}/api/receipts/${id}/download`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
+      alert('Download fehlgeschlagen');
+    }
+  };
+
+  const handleExport = async (format) => {
+    try {
+      setIsLoading(true);
       
-      return [
-        r.id,
-        r.merchant || 'Unbekannt',
-        bruttoAmount.toFixed(2),
-        nettoAmount.toFixed(2),
-        vat19.toFixed(2),
-        vat7.toFixed(2),
-        vatRate ? `${vatRate}%` : '-',
-        r.date || '-',
-        r.category || '-',
-        r.invoice_number || '-',
-        r.is_deductible ? 'Ja' : 'Nein',
-        r.status || 'PENDING',
-        new Date(r.created_at).toLocaleDateString('de-DE')
-      ]
-    })
+      const response = await fetch(`${API_URL}/api/receipts/export/${format}`, {
+        method: 'GET',
+        headers: {
+          'Accept': format === 'pdf' ? 'application/pdf' : 
+                   format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' :
+                   format === 'csv' ? 'text/csv' : 'text/plain'
+        }
+      });
 
-    const csvContent = [
-      headers.join(';'),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
-    ].join('\n')
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.status}`);
+      }
 
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = `rechnungsheld_export_${new Date().toISOString().split('T')[0]}.csv`
-    link.click()
-  }
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+      const filename = filenameMatch?.[1] || `belege_${new Date().toISOString().split('T')[0]}.${format}`;
 
-  const isPDF = file?.name?.toLowerCase().endsWith('.pdf')
-  const pendingCount = receipts.filter(r => r.status === 'PENDING').length
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      console.log(`✅ ${format.toUpperCase()} Export erfolgreich`);
+    } catch (error) {
+      console.error(`Export Error (${format}):`, error);
+      alert(`Export fehlgeschlagen: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getConfidenceColor = (confidence) => {
+    if (confidence >= 80) return 'text-green-600 bg-green-50';
+    if (confidence >= 60) return 'text-yellow-600 bg-yellow-50';
+    return 'text-red-600 bg-red-50';
+  };
+
+  const filteredReceipts = receipts.filter(r => {
+    if (filter === 'ALL') return true;
+    return r.status === filter;
+  });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-6xl mx-auto">
-        <header className="text-center mb-8 pt-8">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <Camera className="w-10 h-10 text-indigo-600" />
-            <h1 className="text-4xl font-bold text-gray-800">RechnungsHeld v3.2</h1>
-          </div>
-          <p className="text-gray-600 font-medium">EASY RECEIPT by save-house.de</p>
-          <p className="text-sm text-gray-500 mt-1">Professionelle Belegerfassung mit Review-System</p>
-          
-          {/* Stats Overview */}
-          {stats && (
-            <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-indigo-600">{stats.total_receipts || 0}</p>
-                <p className="text-sm text-gray-600">Gesamt</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-orange-600">{stats.pending || 0}</p>
-                <p className="text-sm text-gray-600">Zu prüfen</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-green-600">{stats.approved || 0}</p>
-                <p className="text-sm text-gray-600">Genehmigt</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-2xl font-bold text-blue-600">
-                  {stats.total_amount ? parseFloat(stats.total_amount).toFixed(2) : '0.00'} €
-                </p>
-                <p className="text-sm text-gray-600">Summe</p>
-              </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">RechnungsHeld</h1>
+              <p className="text-blue-100 mt-1">Professionelle Belegerfassung mit OCR</p>
             </div>
-          )}
-          
-          <div className="mt-4 flex items-center justify-center gap-4 text-sm flex-wrap">
-            <div className="flex items-center gap-1">
-              {backendStatus === 'ok' ? (
-                <CheckCircle className="w-4 h-4 text-green-500" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-red-500" />
-              )}
-              <span>Backend {backendStatus === 'ok' ? 'OK' : 'Error'}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <FileText className="w-4 h-4 text-purple-500" />
-              <span>PDF Support</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <CheckCircle className="w-4 h-4 text-green-500" />
-              <span>Review-System</span>
-            </div>
-          </div>
-        </header>
-
-        {/* Upload Section */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Upload className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-2xl font-semibold">Beleg hochladen</h2>
-          </div>
-
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-400 transition-colors">
-            <input
-              type="file"
-              accept="image/*,application/pdf,.pdf"
-              onChange={handleFileChange}
-              className="hidden"
-              id="file-upload"
-            />
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <div className="flex flex-col items-center gap-3">
-                {isPDF ? (
-                  <FileText className="w-12 h-12 text-purple-400" />
-                ) : (
-                  <Camera className="w-12 h-12 text-gray-400" />
-                )}
-                <p className="text-gray-600">
-                  {file ? (
-                    <>
-                      {isPDF ? '📄' : '📸'} {file.name}
-                    </>
-                  ) : (
-                    'Beleg hier ablegen oder klicken'
-                  )}
-                </p>
-                <p className="text-sm text-gray-500">Unterstützt: JPG, PNG, PDF</p>
+            <div className="flex items-center gap-4">
+              <div className={`px-3 py-1 rounded-full text-sm ${
+                backendStatus?.status === 'ok' ? 'bg-green-500' : 'bg-red-500'
+              }`}>
+                {backendStatus?.status === 'ok' ? '✓ Online' : '✗ Offline'}
               </div>
-            </label>
-          </div>
-
-          {file && !uploading && (
-            <button
-              onClick={handleUpload}
-              className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-            >
-              <Upload className="w-5 h-5" />
-              Beleg verarbeiten & prüfen
-            </button>
-          )}
-
-          {uploading && (
-            <div className="mt-4 text-center">
-              <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full mx-auto"></div>
-              <p className="mt-2 text-gray-600">Beleg wird analysiert...</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-              <div>
-                <strong>❌ Fehler:</strong> {error}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Receipts List */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-semibold flex items-center gap-2">
-              📋 Belege
-              {pendingCount > 0 && (
-                <span className="bg-orange-100 text-orange-800 text-sm px-2 py-1 rounded">
-                  {pendingCount} zu prüfen
-                </span>
-              )}
-            </h2>
-            <div className="flex gap-2">
-              <select
-                value={filterStatus}
-                onChange={(e) => {
-                  setFilterStatus(e.target.value)
-                  setTimeout(fetchReceipts, 0)
-                }}
-                className="border border-gray-300 rounded px-3 py-2 text-sm"
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="flex items-center gap-2 bg-white text-blue-600 px-6 py-2 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
               >
-                <option value="all">Alle</option>
-                <option value="pending">Zu prüfen</option>
-                <option value="approved">Genehmigt</option>
-              </select>
-              {receipts.length > 0 && (
-                <button
-                  onClick={exportToCSV}
-                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  CSV Export
-                </button>
-              )}
+                <Upload className="w-5 h-5" />
+                Beleg hochladen
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="container mx-auto px-4 py-8">
+        {/* Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Gesamt</p>
+                <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
+              </div>
+              <FileText className="w-8 h-8 text-blue-600" />
             </div>
           </div>
 
-          {receipts.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">Keine Belege vorhanden</p>
-          ) : (
-            <div className="space-y-3">
-              {receipts.map(receipt => (
-                <div 
-                  key={receipt.id} 
-                  className={`p-4 rounded-lg border-2 transition-colors ${
-                    receipt.status === 'PENDING' 
-                      ? 'bg-orange-50 border-orange-200' 
-                      : 'bg-gray-50 border-gray-200'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-semibold text-lg">{receipt.merchant}</h3>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        receipt.status === 'PENDING' 
-                          ? 'bg-orange-200 text-orange-800' 
-                          : 'bg-green-200 text-green-800'
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Zu prüfen</p>
+                <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
+              </div>
+              <AlertCircle className="w-8 h-8 text-yellow-600" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Genehmigt</p>
+                <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
+              </div>
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Summe</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  {parseFloat(stats.total_amount || 0).toFixed(2)}€
+                </p>
+              </div>
+              <DollarSign className="w-8 h-8 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Export Section */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800">Belege exportieren</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Exportiere genehmigte Belege für deine Steuererklärung
+              </p>
+            </div>
+            <Download className="w-6 h-6 text-blue-600" />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <button
+              onClick={() => handleExport('txt')}
+              disabled={isLoading}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <FileText className="w-5 h-5" />
+              <span className="font-medium">TXT</span>
+            </button>
+
+            <button
+              onClick={() => handleExport('csv')}
+              disabled={isLoading}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <Table className="w-5 h-5" />
+              <span className="font-medium">CSV</span>
+            </button>
+
+            <button
+              onClick={() => handleExport('xlsx')}
+              disabled={isLoading}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <FileSpreadsheet className="w-5 h-5" />
+              <span className="font-medium">XLSX</span>
+            </button>
+
+            <button
+              onClick={() => handleExport('pdf')}
+              disabled={isLoading}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <FileDown className="w-5 h-5" />
+              <span className="font-medium">PDF</span>
+            </button>
+          </div>
+
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-xs text-blue-800">
+              <strong>Hinweis:</strong> Nur genehmigte Belege (Status: APPROVED) werden exportiert.
+              {' '}{filteredReceipts.filter(r => r.status === 'APPROVED').length} von {filteredReceipts.length} Belegen werden exportiert.
+            </p>
+          </div>
+        </div>
+
+        {/* Filter */}
+        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilter('ALL')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                filter === 'ALL' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Alle ({receipts.length})
+            </button>
+            <button
+              onClick={() => setFilter('PENDING')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                filter === 'PENDING' ? 'bg-yellow-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Zu prüfen ({stats.pending})
+            </button>
+            <button
+              onClick={() => setFilter('APPROVED')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                filter === 'APPROVED' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Genehmigt ({stats.approved})
+            </button>
+          </div>
+        </div>
+
+        {/* Receipts Table */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Datum</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Händler</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Betrag</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kategorie</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aktionen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredReceipts.map((receipt) => (
+                  <tr key={receipt.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {receipt.date ? new Date(receipt.date).toLocaleDateString('de-DE') : '-'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{receipt.merchant || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {receipt.amount ? `${parseFloat(receipt.amount).toFixed(2)}€` : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {receipt.category || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-medium rounded ${
+                        getConfidenceColor(receipt.confidence_overall)
                       }`}>
-                        {receipt.status === 'PENDING' ? '⏳ Zu prüfen' : '✅ Genehmigt'}
+                        {receipt.confidence_overall}%
                       </span>
-                      {receipt.confidence_overall && (
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          receipt.confidence_overall >= 80 ? 'bg-green-100 text-green-800' :
-                          receipt.confidence_overall >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {receipt.confidence_overall}% Konfidenz
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      {receipt.status === 'PENDING' && (
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-medium rounded ${
+                        receipt.status === 'APPROVED' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {receipt.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex gap-2">
                         <button
-                          onClick={() => setEditingReceipt(receipt)}
-                          className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 text-sm"
+                          onClick={() => {
+                            setSelectedReceipt(receipt);
+                            setShowEditModal(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                          title="Bearbeiten"
                         >
-                          <Edit2 className="w-3 h-3" />
-                          Prüfen
+                          <Edit2 className="w-4 h-4" />
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleDownload(receipt.id, receipt.original_filename)}
-                        className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm"
-                      >
-                        <Eye className="w-3 h-3" />
-                        Original
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm text-gray-700">
-                    <div>
-                      <p className="text-xs text-gray-500">Brutto</p>
-                      <p className="font-semibold">{receipt.amount ? parseFloat(receipt.amount).toFixed(2) : '0.00'} €</p>
-                    </div>
-                    {receipt.vat_amount && (
-                      <>
-                        <div>
-                          <p className="text-xs text-gray-500">MwSt ({receipt.vat_rate}%)</p>
-                          <p className="font-semibold">{parseFloat(receipt.vat_amount).toFixed(2)} €</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Netto</p>
-                          <p className="font-semibold">{(parseFloat(receipt.amount) - parseFloat(receipt.vat_amount)).toFixed(2)} €</p>
-                        </div>
-                      </>
-                    )}
-                    <div>
-                      <p className="text-xs text-gray-500">Datum</p>
-                      <p className="font-semibold">{receipt.date ? receipt.date.split('T')[0] : '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Typ</p>
-                      <p className="font-semibold">{receipt.file_type === 'application/pdf' ? '📄 PDF' : '📸 Foto'}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                        <button
+                          onClick={() => handleDownload(receipt.id, receipt.original_filename)}
+                          className="text-green-600 hover:text-green-800"
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(receipt.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Löschen"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredReceipts.length === 0 && (
+            <div className="text-center py-12">
+              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">Keine Belege gefunden</p>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Review Modal */}
-        {editingReceipt && (
-          <ReviewModal
-            receipt={editingReceipt}
-            onSave={handleSaveReceipt}
-            onClose={() => setEditingReceipt(null)}
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <UploadModal
+          onClose={() => setShowUploadModal(false)}
+          onUpload={handleFileUpload}
+          isLoading={isLoading}
+        />
+      )}
+
+      {/* Review Modal */}
+      {showReviewModal && selectedReceipt && (
+        <ReviewModal
+          receipt={selectedReceipt}
+          onClose={() => setShowReviewModal(false)}
+          onApprove={handleApprove}
+        />
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && selectedReceipt && (
+        <EditModal
+          receipt={selectedReceipt}
+          onClose={() => setShowEditModal(false)}
+          onSave={handleEdit}
+        />
+      )}
+    </div>
+  );
+}
+
+// Upload Modal Component
+function UploadModal({ onClose, onUpload, isLoading }) {
+  const [dragActive, setDragActive] = useState(false);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      onUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      onUpload(e.target.files[0]);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">Beleg hochladen</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div
+          className={`border-2 border-dashed rounded-lg p-8 text-center ${
+            dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+        >
+          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 mb-4">
+            Datei hierher ziehen oder klicken zum Auswählen
+          </p>
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={handleChange}
+            className="hidden"
+            id="file-upload"
+            disabled={isLoading}
           />
-        )}
+          <label
+            htmlFor="file-upload"
+            className="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 disabled:bg-gray-400"
+          >
+            {isLoading ? 'Uploading...' : 'Datei auswählen'}
+          </label>
+          <p className="text-xs text-gray-500 mt-4">PDF, JPG oder PNG (max. 10MB)</p>
+        </div>
       </div>
     </div>
-  )
+  );
 }
 
 // Review Modal Component
-function ReviewModal({ receipt, onSave, onClose }) {
-  const [formData, setFormData] = useState({
-    id: receipt.id,
-    merchant: receipt.merchant || '',
-    amount: receipt.amount || '',
-    date: receipt.date || '',
-    category: receipt.category || 'Geschäftlich',
-    invoice_number: receipt.invoice_number || '',
-    vat_amount: receipt.vat_amount || '',
-    vat_rate: receipt.vat_rate || 19,
-    is_deductible: receipt.is_deductible !== false
-  })
-
-  const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    onSave(formData)
-  }
-
+function ReviewModal({ receipt, onClose, onApprove }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold">Beleg prüfen & korrigieren</h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-          {receipt.confidence_overall && (
-            <p className="text-sm text-gray-600 mt-2">
-              Erkennungsgenauigkeit: <strong>{receipt.confidence_overall}%</strong>
-            </p>
-          )}
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-screen overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">Beleg überprüfen</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Händler *
-              {receipt.confidence_merchant && (
-                <span className={`ml-2 text-xs ${
-                  receipt.confidence_merchant >= 80 ? 'text-green-600' : 'text-orange-600'
-                }`}>
-                  ({receipt.confidence_merchant}% Konfidenz)
-                </span>
-              )}
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Händler</label>
             <input
               type="text"
-              value={formData.merchant}
-              onChange={(e) => handleChange('merchant', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              required
+              value={receipt.merchant || ''}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Brutto-Betrag (€) *
-                {receipt.confidence_amount && (
-                  <span className={`ml-2 text-xs ${
-                    receipt.confidence_amount >= 80 ? 'text-green-600' : 'text-orange-600'
-                  }`}>
-                    ({receipt.confidence_amount}%)
-                  </span>
-                )}
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Betrag</label>
               <input
                 type="number"
                 step="0.01"
-                value={formData.amount}
-                onChange={(e) => handleChange('amount', e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                required
+                value={receipt.amount || ''}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Datum *
-                {receipt.confidence_date && (
-                  <span className={`ml-2 text-xs ${
-                    receipt.confidence_date >= 80 ? 'text-green-600' : 'text-orange-600'
-                  }`}>
-                    ({receipt.confidence_date}%)
-                  </span>
-                )}
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
               <input
                 type="date"
-                value={formData.date ? formData.date.split('T')[0] : ''}
-                onChange={(e) => handleChange('date', e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                required
+                value={receipt.date || ''}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
               />
             </div>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kategorie</label>
+            <input
+              type="text"
+              value={receipt.category || ''}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+            />
+          </div>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              onClick={() => onApprove(receipt)}
+              className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700"
+            >
+              Genehmigen
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300"
+            >
+              Später
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Edit Modal Component
+function EditModal({ receipt, onClose, onSave }) {
+  const [editedReceipt, setEditedReceipt] = useState(receipt);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-screen overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">Beleg bearbeiten</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Händler</label>
+            <input
+              type="text"
+              value={editedReceipt.merchant || ''}
+              onChange={(e) => setEditedReceipt({ ...editedReceipt, merchant: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">MwSt-Betrag (€)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Betrag (€)</label>
               <input
                 type="number"
                 step="0.01"
-                value={formData.vat_amount}
-                onChange={(e) => handleChange('vat_amount', e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={editedReceipt.amount || ''}
+                onChange={(e) => setEditedReceipt({ ...editedReceipt, amount: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">MwSt-Satz (%)</label>
-              <select
-                value={formData.vat_rate}
-                onChange={(e) => handleChange('vat_rate', parseInt(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              >
-                <option value="19">19%</option>
-                <option value="7">7%</option>
-                <option value="0">0%</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+              <input
+                type="date"
+                value={editedReceipt.date || ''}
+                onChange={(e) => setEditedReceipt({ ...editedReceipt, date: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kategorie</label>
+            <select
+              value={editedReceipt.category || ''}
+              onChange={(e) => setEditedReceipt({ ...editedReceipt, category: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Kategorie wählen</option>
+              <option value="Lebensmittel">Lebensmittel</option>
+              <option value="Baumarkt">Baumarkt</option>
+              <option value="Tankstelle">Tankstelle</option>
+              <option value="Möbel">Möbel</option>
+              <option value="Elektronik">Elektronik</option>
+              <option value="Telekommunikation">Telekommunikation</option>
+              <option value="Energie">Energie</option>
+              <option value="Sonstige">Sonstige</option>
+            </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Rechnungsnummer</label>
             <input
               type="text"
-              value={formData.invoice_number}
-              onChange={(e) => handleChange('invoice_number', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Kategorie</label>
-            <select
-              value={formData.category}
-              onChange={(e) => handleChange('category', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-            >
-              <option value="Geschäftlich">Geschäftlich</option>
-              <option value="Privat">Privat</option>
-              <option value="Reisekosten">Reisekosten</option>
-              <option value="Büromaterial">Büromaterial</option>
-              <option value="Software">Software</option>
-              <option value="Hardware">Hardware</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="deductible"
-              checked={formData.is_deductible}
-              onChange={(e) => handleChange('is_deductible', e.target.checked)}
-              className="w-4 h-4"
-            />
-            <label htmlFor="deductible" className="text-sm font-medium text-gray-700">
-              Steuerlich absetzbar
-            </label>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <button
-              type="submit"
-              className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-            >
-              <Save className="w-5 h-5" />
-              Beleg genehmigen & speichern
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-            >
-              Abbrechen
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-export default App
+              value={editedReceipt.invoice_number || ''}
+              onChange={(e) => setEdit
