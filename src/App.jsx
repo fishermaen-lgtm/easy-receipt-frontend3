@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Upload, X, CheckCircle, AlertCircle, Download, 
-  FileText, Edit2, Trash2, Eye, Calendar, DollarSign,
+  FileText, Edit2, Trash2, Calendar, DollarSign,
   Table, FileSpreadsheet, FileDown
 } from 'lucide-react';
 
@@ -18,7 +18,6 @@ function App() {
   const [filter, setFilter] = useState('ALL');
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, total_amount: 0 });
 
-  // Load receipts on mount
   useEffect(() => {
     fetchReceipts();
     checkBackendStatus();
@@ -51,7 +50,6 @@ function App() {
   const handleFileUpload = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-
     setIsLoading(true);
 
     try {
@@ -66,7 +64,8 @@ function App() {
         await fetchReceipts();
         setShowUploadModal(false);
         
-        const newReceipt = receipts.find(r => r.id === data.receiptId) || data;
+        const newReceiptResponse = await fetch(`${API_URL}/api/receipts/${data.receiptId}`);
+        const newReceipt = await newReceiptResponse.json();
         setSelectedReceipt(newReceipt);
         setShowReviewModal(true);
       } else {
@@ -458,6 +457,10 @@ function App() {
           receipt={selectedReceipt}
           onClose={() => setShowReviewModal(false)}
           onApprove={handleApprove}
+          onEdit={() => {
+            setShowReviewModal(false);
+            setShowEditModal(true);
+          }}
         />
       )}
 
@@ -467,13 +470,17 @@ function App() {
           receipt={selectedReceipt}
           onClose={() => setShowEditModal(false)}
           onSave={handleEdit}
+          onApprove={handleApprove}
         />
       )}
     </div>
   );
 }
 
-// Upload Modal Component
+// ============================================================================
+// UPLOAD MODAL COMPONENT
+// ============================================================================
+
 function UploadModal({ onClose, onUpload, isLoading }) {
   const [dragActive, setDragActive] = useState(false);
 
@@ -524,9 +531,11 @@ function UploadModal({ onClose, onUpload, isLoading }) {
           />
           <label
             htmlFor="file-upload"
-            className="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 disabled:bg-gray-400"
+            className={`inline-block px-6 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition-colors ${
+              isLoading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
-            {isLoading ? 'Uploading...' : 'Datei auswählen'}
+            {isLoading ? 'Wird hochgeladen...' : 'Datei auswählen'}
           </label>
           <p className="text-xs text-gray-500 mt-4">PDF, JPG oder PNG (max. 10MB)</p>
         </div>
@@ -535,8 +544,11 @@ function UploadModal({ onClose, onUpload, isLoading }) {
   );
 }
 
-// Review Modal Component
-function ReviewModal({ receipt, onClose, onApprove }) {
+// ============================================================================
+// REVIEW MODAL COMPONENT
+// ============================================================================
+
+function ReviewModal({ receipt, onClose, onApprove, onEdit }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-screen overflow-y-auto">
@@ -560,10 +572,9 @@ function ReviewModal({ receipt, onClose, onApprove }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Betrag</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Betrag (€)</label>
               <input
-                type="number"
-                step="0.01"
+                type="text"
                 value={receipt.amount || ''}
                 readOnly
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
@@ -580,6 +591,27 @@ function ReviewModal({ receipt, onClose, onApprove }) {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">MwSt-Betrag (€)</label>
+              <input
+                type="text"
+                value={receipt.vat_amount || ''}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">MwSt-Satz</label>
+              <input
+                type="text"
+                value={receipt.vat_rate ? `${receipt.vat_rate}%` : ''}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Kategorie</label>
             <input
@@ -590,16 +622,32 @@ function ReviewModal({ receipt, onClose, onApprove }) {
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Rechnungsnummer</label>
+            <input
+              type="text"
+              value={receipt.invoice_number || ''}
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+            />
+          </div>
+
           <div className="flex gap-4 pt-4">
             <button
               onClick={() => onApprove(receipt)}
-              className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700"
+              className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
             >
               Genehmigen
             </button>
             <button
+              onClick={onEdit}
+              className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Bearbeiten
+            </button>
+            <button
               onClick={onClose}
-              className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300"
+              className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
             >
               Später
             </button>
@@ -610,9 +658,20 @@ function ReviewModal({ receipt, onClose, onApprove }) {
   );
 }
 
-// Edit Modal Component
-function EditModal({ receipt, onClose, onSave }) {
+// ============================================================================
+// EDIT MODAL COMPONENT
+// ============================================================================
+
+function EditModal({ receipt, onClose, onSave, onApprove }) {
   const [editedReceipt, setEditedReceipt] = useState(receipt);
+
+  const handleSave = () => {
+    onSave(editedReceipt);
+  };
+
+  const handleSaveAndApprove = () => {
+    onApprove({ ...editedReceipt, status: 'APPROVED' });
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -626,34 +685,59 @@ function EditModal({ receipt, onClose, onSave }) {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Händler</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Händler *</label>
             <input
               type="text"
               value={editedReceipt.merchant || ''}
               onChange={(e) => setEditedReceipt({ ...editedReceipt, merchant: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Betrag (€)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Betrag (€) *</label>
               <input
                 type="number"
                 step="0.01"
                 value={editedReceipt.amount || ''}
                 onChange={(e) => setEditedReceipt({ ...editedReceipt, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Datum *</label>
               <input
                 type="date"
                 value={editedReceipt.date || ''}
                 onChange={(e) => setEditedReceipt({ ...editedReceipt, date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">MwSt-Betrag (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editedReceipt.vat_amount || ''}
+                onChange={(e) => setEditedReceipt({ ...editedReceipt, vat_amount: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">MwSt-Satz (%)</label>
+              <select
+                value={editedReceipt.vat_rate || ''}
+                onChange={(e) => setEditedReceipt({ ...editedReceipt, vat_rate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Keine</option>
+                <option value="7">7%</option>
+                <option value="19">19%</option>
+              </select>
             </div>
           </div>
 
@@ -662,16 +746,22 @@ function EditModal({ receipt, onClose, onSave }) {
             <select
               value={editedReceipt.category || ''}
               onChange={(e) => setEditedReceipt({ ...editedReceipt, category: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">Kategorie wählen</option>
               <option value="Lebensmittel">Lebensmittel</option>
               <option value="Baumarkt">Baumarkt</option>
+              <option value="Baustoff">Baustoff</option>
               <option value="Tankstelle">Tankstelle</option>
               <option value="Möbel">Möbel</option>
               <option value="Elektronik">Elektronik</option>
               <option value="Telekommunikation">Telekommunikation</option>
               <option value="Energie">Energie</option>
+              <option value="Entsorgung">Entsorgung</option>
+              <option value="Drogerie">Drogerie</option>
+              <option value="Werkzeug">Werkzeug</option>
+              <option value="KFZ">KFZ</option>
+              <option value="Bürobedarf">Bürobedarf</option>
               <option value="Sonstige">Sonstige</option>
             </select>
           </div>
@@ -681,4 +771,35 @@ function EditModal({ receipt, onClose, onSave }) {
             <input
               type="text"
               value={editedReceipt.invoice_number || ''}
-              onChange={(e) => setEdit
+              onChange={(e) => setEditedReceipt({ ...editedReceipt, invoice_number: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              onClick={handleSaveAndApprove}
+              className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+            >
+              Speichern & Genehmigen
+            </button>
+            <button
+              onClick={handleSave}
+              className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Nur Speichern
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
